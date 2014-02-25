@@ -119,11 +119,11 @@
     m_canvas2D = GLOBAL.document.createElement('canvas'),
     m_canvas3D = GLOBAL.document.createElement('canvas'),
     m_ctx2d = m_canvas2D.getContext('2d'),
-    gl = m_canvas3D.getContext("experimental-webgl") || m_canvas3D.getContext("webgl"),
+    gl = m_canvas3D.getContext("webgl") || m_canvas3D.getContext("experimental-webgl"),
     m_rendererAttrs = $(m_divContainer).addClass(FACTORY_KEY).css(RENDERER_CSS).append($(m_canvas2D).css(RENDERER_CSS).css(RENDERER_CSS_2D)).append($(m_canvas3D).css(RENDERER_CSS).css(RENDERER_CSS_3D)),
     m_sceneJSON = null,
     m_objectHandler = create3DObjectHandler(),
-    m_vglVtkReader = ogs.vgl.vtkReader(),
+    m_vglVtkReader = vgl.vtkReader(),
     m_viewer = null,
     m_interactorStyle,
     originalMouseDown =  document.onmousedown,
@@ -182,9 +182,9 @@
               hasTransparency: sceneObject.transparency,
               layer: sceneObject.layer
             };
-            if (newObject.layer === 0) {
-              m_vglVtkReader.addVtkObjectData(newObject);
-            }
+
+            m_vglVtkReader.addVtkObjectData(newObject);
+
             // Redraw the scene
             drawScene();
           } catch(error) {
@@ -205,15 +205,11 @@
         if (m_sceneJSON === null || typeof m_sceneJSON === 'undefined') {
           return;
         }
-
-        m_viewer = m_vglVtkReader.updateViewer(m_canvas3D);
+        m_viewer = m_vglVtkReader.updateViewer();
 
         if (m_viewer === null) {
           return;
         }
-        var width = m_rendererAttrs.width(),
-        height = m_rendererAttrs.height(),
-        nbObjects;
 
         // Update frame rate
         m_container.trigger({
@@ -222,25 +218,9 @@
           stat_value: 0
         });
 
-        // Clear 2D overlay canvas
-        m_ctx2d.canvas.width = width;
-        m_ctx2d.canvas.height = height;
-        m_ctx2d.clearRect(0, 0, width, height);
-
-        HTMLCanvasElement.prototype.relMouseCoords =
-          m_viewer.relMouseCoords;
-
-        document.onmousedown = m_viewer.handleMouseDown;
-        document.onmouseup = m_viewer.handleMouseUp;
-        document.onmousemove = m_viewer.handleMouseMove;
-        document.oncontextmenu = m_viewer.handleContextMenu;
-
-        m_interactorStyle = m_viewer.interactorStyle();
-        $(m_interactorStyle).on(ogs.vgl.command.leftButtonPressEvent, m_viewer.render);
-        $(m_interactorStyle).on(ogs.vgl.command.middleButtonPressEvent, m_viewer.render);
-        $(m_interactorStyle).on(ogs.vgl.command.rightButtonPressEvent, m_viewer.render);
-
         m_viewer.render();
+
+        numObjects = m_vglVtkReader.numObjects();
 
         // Update frame rate
         m_container.trigger({
@@ -252,7 +232,7 @@
         m_container.trigger({
           type: 'stats',
           stat_id: 'webgl-nb-objects',
-          stat_value: nbObjects
+          stat_value: numObjects
         });
       } catch(error) {
         console.log(error);
@@ -264,13 +244,13 @@
     function pushCameraState() {
       if(m_viewer !== null) {
         var cam =  m_viewer.renderWindow().activeRenderer().camera(),
-            fp_ = cam.getFocalPoint(),
-            up_ = cam.getViewUp(),
-            pos_ = cam.getPosition(),
+            fp_ = cam.focalPoint(),
+            up_ = cam.viewUpDirection(),
+            pos_ = cam.position(),
             fp = [fp_[0], fp_[1], fp_[2]],
             up = [up_[0], up_[1], up_[2]],
             pos = [pos_[0], pos_[1], pos_[2]];
-        session.call("vtk:updateCamera", Number(m_options.view), fp, up, pos);
+        m_session.call("vtk:updateCamera", Number(m_options.view), fp, up, pos);
       }
     }
 
@@ -300,9 +280,26 @@
     // Add viewport listener
     m_container.bind('invalidateScene', function() {
       if(m_rendererAttrs.hasClass('active')){
-        m_vglVtkReader = ogs.vgl.vtkReader();
+        m_vglVtkReader = vgl.vtkReader();
         m_canvas3D.width = m_rendererAttrs.width();
         m_canvas3D.height = m_rendererAttrs.height();
+
+        m_viewer = m_vglVtkReader.createNewViewer(m_canvas3D);
+
+        if (m_viewer !== null && typeof(m_viewer) !== "undefined") {
+          document.onmousedown = m_viewer.handleMouseDown;
+          document.onmouseup = m_viewer.handleMouseUp;
+          document.onmousemove = m_viewer.handleMouseMove;
+          document.oncontextmenu = m_viewer.handleContextMenu;
+          HTMLCanvasElement.prototype.relMouseCoords =
+          m_viewer.relMouseCoords;
+
+          m_interactorStyle = m_viewer.interactorStyle();
+          $(m_interactorStyle).on(vgl.command.leftButtonPressEvent, m_viewer.render);
+          $(m_interactorStyle).on(vgl.command.middleButtonPressEvent, m_viewer.render);
+          $(m_interactorStyle).on(vgl.command.rightButtonPressEvent, m_viewer.render);
+        }
+
         fetchScene();
       }
       else {
@@ -313,6 +310,9 @@
       }
     }).bind('render', function(){
       if(m_rendererAttrs.hasClass('active')){
+        m_canvas3D.width = m_rendererAttrs.width();
+        m_canvas3D.height = m_rendererAttrs.height();
+        m_viewer = m_vglVtkReader.updateCanvas(m_canvas3D);
         drawScene();
       }
     }).bind('resetViewId', function(e){
